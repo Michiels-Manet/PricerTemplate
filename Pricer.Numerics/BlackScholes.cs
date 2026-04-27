@@ -83,6 +83,69 @@ public class BlackScholes
         }
     }
 
+
+
+    // Delta: derivative of option price with respect to the underlying price S
+    public double Delta()
+    {
+        if (T <= 0.0)
+        {
+            if (option == OptionType.Call)
+                return S > K ? 1.0 : 0.0;
+
+            return S < K ? -1.0 : 0.0;
+        }
+
+        if (sigma <= 0.0)
+            return option == OptionType.Call
+                ? (S * Math.Exp((r - q) * T) > K ? Math.Exp(-q * T) : 0.0)
+                : (S * Math.Exp((r - q) * T) < K ? -Math.Exp(-q * T) : 0.0);
+
+        double sqrtT = Math.Sqrt(T);
+        double d1 = (Math.Log(S / K) + (r - q + 0.5 * sigma * sigma) * T) / (sigma * sqrtT);
+
+        return option == OptionType.Call
+            ? Math.Exp(-q * T) * N(d1)
+            : Math.Exp(-q * T) * (N(d1) - 1.0);
+    }
+
+    // Gamma: derivative of delta with respect to the underlying price S
+    public double Gamma()
+    {
+        if (T <= 0.0 || sigma <= 0.0)
+            return 0.0;
+
+        double sqrtT = Math.Sqrt(T);
+        double d1 = (Math.Log(S / K) + (r - q + 0.5 * sigma * sigma) * T) / (sigma * sqrtT);
+
+        return Math.Exp(-q * T) * n(d1) / (S * sigma * sqrtT);
+    }
+
+    // Theta: derivative of option price with respect to calendar time.
+    // This is the standard market convention: theta is usually negative for long options.
+    public double Theta()
+    {
+        if (T <= 0.0 || sigma <= 0.0)
+            return 0.0;
+
+        double sqrtT = Math.Sqrt(T);
+        double d1 = (Math.Log(S / K) + (r - q + 0.5 * sigma * sigma) * T) / (sigma * sqrtT);
+        double d2 = d1 - sigma * sqrtT;
+
+        double firstTerm = -S * Math.Exp(-q * T) * n(d1) * sigma / (2.0 * sqrtT);
+
+        if (option == OptionType.Call)
+        {
+            return firstTerm
+                 - r * K * Math.Exp(-r * T) * N(d2)
+                 + q * S * Math.Exp(-q * T) * N(d1);
+        }
+
+        return firstTerm
+             + r * K * Math.Exp(-r * T) * N(-d2)
+             - q * S * Math.Exp(-q * T) * N(-d1);
+    }
+
     // Derivative of price with respect to volatility
     public double Vega() // de vega van de optie berekenen (vega = hoe gevoelig is de prijs van de optie voor veranderingen in de volatiliteit)
     {
