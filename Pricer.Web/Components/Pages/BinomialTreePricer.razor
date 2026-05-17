@@ -1,0 +1,278 @@
+@page "/binomialtree"
+@using MudBlazor
+@using Pricer.Numerics
+
+<MudPaper Class="pa-4 ma-4">
+    <MudText Typo="Typo.h4" Class="mb-2">Binomial Tree Pricer</MudText>
+
+    <MudText Class="mb-4">
+        This page prices a European option with a Cox-Ross-Rubinstein binomial tree and compares it with the Black-Scholes price.
+        For a European option, the binomial tree price converges to the Black-Scholes price as the number of steps n becomes large.
+    </MudText>
+
+    <MudGrid>
+        <MudItem xs="12" sm="6" md="4">
+            <MudSelect T="OptionType" Label="Option Type" @bind-Value="optionType">
+                <MudSelectItem Value="OptionType.Call">Call</MudSelectItem>
+                <MudSelectItem Value="OptionType.Put">Put</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="4">
+            <MudNumericField T="double" Label="Underlying Price S" @bind-Value="underlyingPrice" />
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="4">
+            <MudNumericField T="double" Label="Strike K" @bind-Value="strike" />
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="4">
+            <MudNumericField T="double" Label="Risk-free Rate r" @bind-Value="interestRate" />
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="4">
+            <MudNumericField T="double" Label="Volatility σ" @bind-Value="volatility" />
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="4">
+            <MudNumericField T="double" Label="Time to Maturity T" @bind-Value="timeToMaturity" />
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="4">
+            <MudNumericField T="int" Label="Number of Steps n" @bind-Value="steps" Min="1" />
+        </MudItem>
+    </MudGrid>
+
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-4" OnClick="RefreshAll">
+        Compute
+    </MudButton>
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <MudAlert Severity="Severity.Error" Class="mt-4">
+            @errorMessage
+        </MudAlert>
+    }
+
+    <MudDivider Class="my-4" />
+
+    <MudText Typo="Typo.h6">Current Result</MudText>
+
+    <MudGrid Class="mt-2">
+        <MudItem xs="12" md="4">
+            <MudPaper Class="pa-3" Outlined="true">
+                <MudText Typo="Typo.subtitle2">Binomial Tree Price</MudText>
+                <MudText Typo="Typo.h5">@(binomialPrice?.ToString("F6") ?? "-")</MudText>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="4">
+            <MudPaper Class="pa-3" Outlined="true">
+                <MudText Typo="Typo.subtitle2">Black-Scholes Price</MudText>
+                <MudText Typo="Typo.h5">@(blackScholesPrice?.ToString("F6") ?? "-")</MudText>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="4">
+            <MudPaper Class="pa-3" Outlined="true">
+                <MudText Typo="Typo.subtitle2">Absolute Error</MudText>
+                <MudText Typo="Typo.h5">@(absoluteError?.ToString("E4") ?? "-")</MudText>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    <MudPaper Class="pa-3 mt-4" Outlined="true">
+        <MudText Typo="Typo.subtitle2">CRR Parameters for Current n</MudText>
+        <MudText>u = @(uFactor?.ToString("F6") ?? "-")</MudText>
+        <MudText>d = @(dFactor?.ToString("F6") ?? "-")</MudText>
+        <MudText>q = @(riskNeutralProbability?.ToString("F6") ?? "-")</MudText>
+    </MudPaper>
+</MudPaper>
+
+<MudPaper Class="pa-4 ma-4">
+    <MudText Typo="Typo.h5" Class="mb-2">Convergence to Black-Scholes</MudText>
+
+    <MudText Class="mb-4">
+        The table computes the binomial price for increasing values of n. For large n, the absolute error should become small.
+    </MudText>
+
+    <MudTable Items="convergenceRows" Dense="true" Hover="true" Bordered="true">
+        <HeaderContent>
+            <MudTh>n</MudTh>
+            <MudTh>Binomial Price</MudTh>
+            <MudTh>Black-Scholes Price</MudTh>
+            <MudTh>Absolute Error</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="n">@context.Steps</MudTd>
+            <MudTd DataLabel="Binomial Price">@context.BinomialPrice.ToString("F6")</MudTd>
+            <MudTd DataLabel="Black-Scholes Price">@context.BlackScholesPrice.ToString("F6")</MudTd>
+            <MudTd DataLabel="Absolute Error">@context.AbsoluteError.ToString("E4")</MudTd>
+        </RowTemplate>
+    </MudTable>
+
+    <MudChart T="double"
+              ChartType="ChartType.Line"
+              ChartSeries="@chartSeries"
+              Width="100%"
+              Height="400px"
+              Class="mt-4" />
+
+    <MudText Class="mt-2"><b>X-axis:</b> increasing values of n from the table: 1, 2, 5, ..., 1000</MudText>
+    <MudText><b>Y-axis:</b> option price</MudText>
+</MudPaper>
+
+@code
+{
+    private OptionType optionType = OptionType.Call;
+
+    private double underlyingPrice = 100.0;
+    private double strike = 100.0;
+    private double interestRate = 0.05;
+    private double volatility = 0.20;
+    private double timeToMaturity = 1.0;
+    private int steps = 100;
+
+    private double? binomialPrice;
+    private double? blackScholesPrice;
+    private double? absoluteError;
+
+    private double? uFactor;
+    private double? dFactor;
+    private double? riskNeutralProbability;
+
+    private string? errorMessage;
+
+    private List<ConvergenceRow> convergenceRows = new();
+    private List<ChartSeries<double>> chartSeries = new();
+
+    protected override void OnInitialized()
+    {
+        RefreshAll();
+    }
+
+    private void RefreshAll()
+    {
+        errorMessage = null;
+
+        try
+        {
+            ValidateInputs();
+
+            binomialPrice = BinomialTree.EuropeanOptionPrice(
+                optionType,
+                underlyingPrice,
+                strike,
+                interestRate,
+                timeToMaturity,
+                volatility,
+                steps
+            );
+
+            var blackScholes = new BlackScholes(
+                optionType,
+                interestRate,
+                timeToMaturity,
+                volatility,
+                strike,
+                underlyingPrice
+            );
+
+            blackScholesPrice = blackScholes.Price();
+            absoluteError = Math.Abs(binomialPrice.Value - blackScholesPrice.Value);
+
+            if (volatility > 0.0 && timeToMaturity > 0.0)
+            {
+                uFactor = BinomialTree.CRRUpFactor(volatility, timeToMaturity, steps);
+                dFactor = BinomialTree.CRRDownFactor(volatility, timeToMaturity, steps);
+                riskNeutralProbability = BinomialTree.RiskNeutralProbability(interestRate, volatility, timeToMaturity, steps);
+            }
+            else
+            {
+                uFactor = null;
+                dFactor = null;
+                riskNeutralProbability = null;
+            }
+
+            RefreshConvergenceTable();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private void RefreshConvergenceTable()
+    {
+        if (blackScholesPrice is null)
+            return;
+
+        int[] stepValues =
+        {
+            1, 2, 5, 10, 25, 50, 100, 250, 500, 1000
+        };
+
+        convergenceRows = new List<ConvergenceRow>();
+
+        foreach (int n in stepValues)
+        {
+            double treePrice = BinomialTree.EuropeanOptionPrice(
+                optionType,
+                underlyingPrice,
+                strike,
+                interestRate,
+                timeToMaturity,
+                volatility,
+                n
+            );
+
+            convergenceRows.Add(new ConvergenceRow
+            {
+                Steps = n,
+                BinomialPrice = treePrice,
+                BlackScholesPrice = blackScholesPrice.Value,
+                AbsoluteError = Math.Abs(treePrice - blackScholesPrice.Value)
+            });
+        }
+
+        chartSeries = new List<ChartSeries<double>>
+        {
+            new ChartSeries<double>
+            {
+                Name = "Binomial Tree Price",
+                Data = convergenceRows.Select(row => row.BinomialPrice).ToArray()
+            },
+            new ChartSeries<double>
+            {
+                Name = "Black-Scholes Price",
+                Data = convergenceRows.Select(row => row.BlackScholesPrice).ToArray()
+            }
+        };
+    }
+
+    private void ValidateInputs()
+    {
+        if (underlyingPrice <= 0.0)
+            throw new InvalidOperationException("Underlying price S must be positive.");
+
+        if (strike <= 0.0)
+            throw new InvalidOperationException("Strike K must be positive.");
+
+        if (timeToMaturity < 0.0)
+            throw new InvalidOperationException("Time to maturity T cannot be negative.");
+
+        if (volatility < 0.0)
+            throw new InvalidOperationException("Volatility σ cannot be negative.");
+
+        if (steps <= 0)
+            throw new InvalidOperationException("Number of steps n must be positive.");
+    }
+
+    private sealed class ConvergenceRow
+    {
+        public int Steps { get; set; }
+        public double BinomialPrice { get; set; }
+        public double BlackScholesPrice { get; set; }
+        public double AbsoluteError { get; set; }
+    }
+}
